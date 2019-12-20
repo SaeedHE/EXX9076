@@ -1,0 +1,155 @@
+---
+title: " Free-Surface Elevation "
+output: html_notebook
+---
+Saeed Hosseinzadeh, 20.12.2019
+The idea of this project is how to find the accurate evaluation point of free surface in wedge drop test. 
+```{r}
+
+library(jpeg)
+model <- readJPEG("fsurf_0.61h/img.jpg", native = TRUE)
+if (exists("rasterImage")) {
+      plot(1:2, type = 'n')
+      rasterImage(model,1,1,2,2)
+      title("Schematic of the Wedge")
+}
+
+#Volume Fraction of Water
+img <- readJPEG("fsurf_0.61h/vof_water_image_00450.jpg", native = TRUE)
+
+if (exists("rasterImage")) {
+      plot(1:2, type = 'n')
+      rasterImage(img,1,1,2,2)
+      title("Volume Fraction of Water")
+}
+
+
+```
+
+
+```{r}
+path_to <- "fsurf_0.61h/freesurface_image_00500.csv"
+
+FS_i <- function(path_to){
+  data_tab <- read.table(file = path_to , header = T, sep = ',',colClasses = c('numeric','numeric'))
+  return(data_tab)
+}
+
+Data_i <- FS_i(path_to)
+head(Data_i,10)
+
+names(Data_i) <- c('Xposition', 'Yposition')
+D <- Data_i[order(Data_i),]
+x <- D$Xposition
+y <- D$Yposition
+
+plot(x,y, type = "b",col = "red", lwd = 1 , pch = 1, xlab = "X_position", ylab = "Y_position", main = "Free Surface")
+lines(D, type = "l", col = "red", lwd = 1, pch = 15)
+```
+
+```{r}
+
+loessFit <- loess(y~ x, Data_i, span = 0.05)
+loessFit <- data.frame(x = loessFit$x,y = loessFit$fitted)
+loessFit <- loessFit[order(loessFit),]
+approxFit <- approx(Data_i,n = 50)
+lowessFit <- data.frame(lowess(Data_i,f = .05,iter = 5))
+plot(Data_i,col = 'gray')
+lines(lowessFit,col = 'red')
+lines(loessFit,col = 'green')
+lines(approxFit,col = 'blue')
+legend(150,.6,
+       legend = c("Loess","Lowess",'Approx'),
+       lty = c(1,1),
+       lwd = c(2.5,2.5),col = c("green","red","blue"))
+
+#library(ggplot2)
+#ggplot(D, aes(D$Xposition,D$Yposition)) + geom_point() + geom_smooth(method = "loess", span = 0.01, se = FALSE) 
+
+
+```
+```{r}
+library(zoo)
+argmax <- function(x, y, w=1, ...) {
+  require(zoo)
+  n <- length(y)
+  y.max <- rollapply(zoo(y), 2 * w + 1, max, align = "center")
+    delta <- y.max - y[-c(1:w, n + 1 - 1:w)]
+  i.max <- which(delta <= 0) + w
+  list(x = x[i.max], i = i.max, y.hat = y)
+}
+
+test <- function(w, span) {
+  peaks <- argmax(x, y, w = w, span = span)
+  
+  plot(x, y, cex = 0.75, type = "b", col = "black", main = paste("w = ", w, ", span = ", span, sep = ""))
+  lines(x, peaks$y.hat,  type = "l", lwd = 1) 
+  y.min <- min(y)
+  sapply(peaks$i, function(i) lines(c(x[i],x[i]), c(y.min, peaks$y.hat[i]), col = "Red", lty = 2))
+  points(x[peaks$i], peaks$y.hat[peaks$i], col = "Red", pch = 19, cex = 1.25)
+  a <- c(x[peaks$i],peaks$y.hat[peaks$i])
+  return(a)
+}
+
+a <- test(10, 0.05)
+
+```
+
+```{r}
+A <- c()
+k <- 0 
+
+file_names <- list.files('fsurf_0.61h', full.names = T)
+for (i in 1:1000) { 
+    Data <- read.table(file = file_names[i], header = T, sep = ',',colClasses = c('numeric','numeric'))
+  names(Data) <- c('Xposition', 'Yposition')
+  fs <- Data[order(Data),]
+  
+  F_s <- subset(fs, fs$Xposition > -3.5 & fs$Xposition < 3.5)
+  #plot(F_s$Xposition,F_s$Yposition, type = "b")
+  F_s$time <- i 
+  if (k == 0 ) {
+    tbl <- F_s
+    k <- 1
+  } else {
+    tbl <- rbind(tbl,F_s)
+  }
+}
+
+tbl2 <- subset(tbl, time %in% c(450,500,600))
+#plot(x = tbl2$Xposition,y = tbl2$Yposition, col = tbl2$time)
+library(ggplot2)
+ggplot(tbl2,aes(x = Xposition,y = Yposition, col = time)) + geom_point(size = 2)  #geom_line()
+```
+```{r}
+library(zoo)
+tbl2 <- subset(tbl, time %in% c(450,500,600))
+x <- tbl2$Xposition
+y <- tbl2$Yposition
+argmax <- function(x, y, w=1, ...) {
+  require(zoo)
+  n <- length(y)
+  y.max <- rollapply(zoo(y), 2 * w + 1, max, align = "center")
+  delta <- y.max - y[-c(1:w, n + 1 - 1:w)]
+  i.max <- which(delta <= 0) + w
+  list(x = x[i.max], i = i.max, y.hat = y)
+}
+
+test <- function(w, span) {
+  
+  peaks <- argmax(x, y, w = w, span = span)
+  
+  plot(x, y, cex = 0.75, type = "b", col = "black", main = paste("w = ", w, ", span = ", span, sep = ""))
+  lines(x, peaks$y.hat,  type = "l", lwd = 1) 
+  y.min <- min(y)
+  sapply(peaks$i, function(i) lines(c(x[i],x[i]), c(y.min, peaks$y.hat[i]), col = "Red", lty = 2))
+  points(x[peaks$i], peaks$y.hat[peaks$i], col = "Red", pch = 19, cex = 1.25)
+  a <- c(x[peaks$i],peaks$y.hat[peaks$i])
+  return(a)
+}
+a <- test(50, 0.05)
+head(a,12)
+```
+
+
+
